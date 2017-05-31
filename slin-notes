@@ -1,0 +1,618 @@
+SLIN MST Forbidden Notes
+31 May 2017
+
+###############################
+# Lesson 0: Installing CentOS #
+###############################
+
+# Hostname
+hostnamectl                             # display current hostname
+hostnamectl set-hostname [hostname]     # set hostname
+
+# User and Group Management:
+useradd [username]              # add user with pre-built home directory
+passwd [username]               # change a user's password
+groupadd [goupname]             # create a new group
+usermod -aG [group] [user]      # add user to a group (append)
+
+# Permissions
+chmod [uge] [file]              # change permissions of a file (user-group-everyone) (4-read, 2-write, 1-execute)
+chgrp [group] [file]            # change the group owner of a file
+
+# Copying RPM files from CentOS Installation DVD Steps
+mkdir –p /var/ftp/pub/Packages
+cd /run/media/root/CentOS\ 7\ x86_64/Packages
+cp * /var/ftp/pub/Packages
+cd
+umount /run/media/root/CentOS\ 7\ x86_64
+
+# Yum Repository Server Setup Steps
+rpm –ihv /var/ftp/pub/Packages/createrepo-0.9.9-23.el7.noarch.rpm
+createrepo /var/ftp/pub/Packages
+rpm –ihv /var/ftp/pub/Packages/vsftpd-3.0.2-9.el7.x86_64.rpm
+restorecon –Rv /var/ftp/pub/Packages
+systemctl start vsftpd
+systemctl enable vsftpd
+systemctl status vsftpd         # Check whether vsftpd is active, check firewall allows port 21
+
+# Yum Repository Client Connection Setup Steps
+``` /etc/yum.repos.d/server.repo # Yum config file
+[server]
+name=My Yum Server
+baseurl=ftp://serverIP/pub/Packages
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+```
+yum repolist                    # list all repos client is configured to connect to
+yum –-disablerepo=”*” –-enablerepo=”server” list # list all installed and available packages from server repo
+yum –-disablerepo=”*” –-enablerepo=”server” install [package] # install a package from server repo
+yum info [package]              # display information about an installed package
+yum remove [package]            # remove an installed package
+# Note: add "enabled=0" to other .repos to force client to only connect to server repo
+
+# Yum Repository Server Connection Setup Steps
+``` /etc/yum.repos.d/server.repo # Yum config file
+[server]
+name=My Yum Server
+baseurl=file:///var/ftp/pub/Packages
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-CentOS-7
+```
+
+# Other Yum Commands
+rpm -qa                         # list packages installed on system
+rpm -qa | grep [package]        # check whether a package is already installed
+yum list installed | less       # list packages installed on system from yum repo
+
+# Systemctl
+systemctl start [service]       # starts a service
+systemctl stop [service]        # stops a service
+systemctl enable [service]      # start service on boot, making it persistent
+systemctl is-enabled [service]  # check if service will start on boot
+systemctl list-unit-files --type service # view all services and see whether they are enabled
+
+# Misc
+Ctrl + Alt + F1-F6              # switch between virtual consoles and GUI
+mkdir -p [many/paths/to/create] # create entire directory path
+
+##########################
+# Lesson 1: Using CentOS #
+##########################
+
+# SSH Server
+``` /etc/ssh/sshd_config        # SSHd config file
+Port 22                         # port sshd will run on, if changing, configure firewall too
+AllowUsers [user]               # whitelist a certain user, only they can ssh in
+```
+semanage port -a -t ssh_port_t -p tcp [new port] # allow ssh to listen on custom ports
+systemctl restart sshd
+
+# SSH Client
+ssh [user]@[ip] [-p port]
+scp [ip]:[filepath] [localpath] # secure copy file from remote to local
+scp [localpath] [ip]:[filepath] # secure copy file from local to remote
+sftp [user]@[ip]
+get [file]                      # download file, "put" to upload a file
+exit
+
+# Network Info
+nmcli device/d                  # display network devices
+nmcli d show [eno16777736]      # display details about specific network device (IP and subnet mask)
+ip addr/ipconfig                # display IP and subnet mask
+route                           # display gateway information ("G" flag)
+cat /etc/resolv.conf            # display DNS server information
+
+# Network Configuration for Static IP Steps
+nmcli connection modify [eno16777736] ipv4.addresses "[ip]/[subnet(24)] [gateway]" ipv4.dns [dns]
+nmcli connection modify [eno16777736] ipv4.method manual
+nmclid device disconnect [eno16777736]
+nmclid device connect [eno16777736]
+ip addr                                                 # check
+cat /etc/sysconfig/network-scripts/ifcfg-[eno16777736]  # check to see changes just made
+# Note: the DNS setting in ^ that file will override /etc/resolv.conf
+# Note: update client's yum server.repo file to point to the new server IP
+
+# Kernel Parameters
+sysctl -a                                       # list available kernel parameters and current value
+sysctl -a | grep icmp                           # view list of available kernel parameters associated with ICMP
+sysctl -w net.ipv4.icmp_echo_ignore_all=1       # set kernel parameter so that kernel will ignore ping packets
+``` /etc/sysctl.conf                            # Kernel Parameter File
+net.ipv4.icmp_echo_ignore_all = 0               # alternatively, it can be modified directly by editing /etc/sysctl.conf
+```
+sysctl -p                                       # load settings from /etc/sysctl.conf to make them effective
+
+# Sudo Related
+``` visudo                              # sudoers list
+[user]    ALL=ALL                       # adds user to sudoers
+```
+``` /etc/passwd
+root:x:0:0:root:/root:/sbin/nologin     # prevent root login (original "/bin/bash")
+```
+
+##### VSFTPd #####
+
+# VSFTPd Server Setup Steps
+yum info vsftpd                 # check if vsftpd is already installed
+yum install vsftpd
+systemctl enable vsftpd
+mkdir -p /var/ftp/pub
+vim /var/ftp/pub/file           # create a file accessible by users who ftp in
+``` /etc/vsftpd/vsftpd.conf     # VSFTPd config file
+anonymous_enable=YES            # allow anonymous access (no login required) to vsftpd
+ftpd_banner=Hello World         # ftpd banner displayed when someone ftps in
+```
+systemctl start/restart vsftpd
+
+# VSFTPd - Chroot a User To Their Home Directory Steps
+setsebool -P ftp_home_dir on    # allow users to access their home directories
+``` /etc/vsftpd/vsftpd.conf
+chroot_list_enable=YES
+chroot_list_file=/etc/vsftpd/chroot_list
+allow_writeable_chroot=YES      # add this line
+```
+systemctl restart vsftpd
+
+# VSFTPd - Anonymous Uploads Steps
+mkdir /var/ftp/incoming
+chgrp ftp /var/ftp/incoming
+chmod 730 /var/ftp/incoming
+``` /etc/vsftpd/vsftpd.conf     # VSFTPd config file
+anonymous_enable=YES            # allow anonymous access (no login required) to vsftpd
+anonymous_upload_enable=YES     # allow anonymous uploads
+```
+systemctl restart vsftpd
+# Note: SELinux may need to be configured
+chcon -t public_content_rw_t /var/ftp/incoming
+getsebool -a | grep ftp         # check if there are any selinux booleans related to FTP upload
+setsebool -P ftpd_anon_write on
+
+# VSFTPd - Compiled Configurations
+chroot_list_enable=YES
+chroot_list_file=/etc/vsftpd/chroot_list
+allow_writeable_chroot=YES      # add this line
+anonymous_enable=YES            # allow anonymous access (no login required) to vsftpd
+anonymous_upload_enable=YES     # allow anonymous uploads
+local_enable                    # allow local users to user vsftpd service
+
+# FTP Client Download Steps
+yum install ftp
+ftp [ip]
+username: anonymous             # for anonymous login
+password: [blank, press enter]  # for anonymous login
+get [file]                      # download a file, "put" to upload file
+bye
+
+##### TFTP x Xinetd #####
+
+# TFTP Server with Xinetd Setup Steps
+yum install xinetd
+yum install tftp-server
+systemctl start xinetd
+``` /etc/xinetd.d/tfp
+disable = no
+```
+netstat -tunap | grep xinetd    # xinetd should be running on UDP port 69
+vim /var/lib/tftpboot/[file]    # create a file accessible by users who tftp in
+# Note: edit firewall to allow tftp service
+
+# TFTP Client Download Steps
+yum install tftp
+tftp [ip]
+get [file]
+
+##### SELinux #####
+
+getenforce                      # check which selinux mode system is in
+setenforce 0                    # set system to be in Permissive mode (temporarily)
+setenforce 1                    # set system to be in Enforcing mode (temporarily)
+``` /etc/selinux/config         # edit to make selinux mode permanent even after reboot
+SELINUX=enforcing
+```
+
+system-config-selinux           # display mode and boolean strings
+getsebool -a                    # display selinux setting booleans (eg. for ftpd_anon_write)
+ls -lZ                          # display selinux file contexts of a directory
+chcon -t [shadow_t] [file]      # change file context of a file
+restorecon [file]               # reset file context of a file
+
+yum install policycoreutils-gui # selinux gui version
+tail /var/log/audit/audit.log   # display selinux log file messages
+tail /var/log/messages          # display selinux log file messages
+
+##### Text/File Manipulation #####
+
+# Sed
+sed s/This/With That/g [file]   # substitution, sends result to standard output
+
+# Awk
+awk -F "\t" '$3 ~/A/ {print $1, $2, $3}' /tmp/data.txt | sort   # print first 3 columns of a file if the 3rd column contains the letter 'A', sort alphabetically, "-F" use tabs as delimiter
+
+##### Misc #####
+
+# Netstat
+netstat -tunap | grep [service] # display services ruunning on what port
+
+#########################
+# Lesson 2: Web Servers #
+#########################
+
+##### Apache #####
+
+# Apache Setup Steps
+yum install httpd
+systemctl start httpd
+vim /var/www/html/index.html
+# Note: Adjust firewall rules to allow http or port 80
+# Note: Visit http://localhost to view apache website
+
+# Apache - Making New Directories
+mkdr /var/www/html/books
+vim /var/www/html/books/book.html
+
+# Apache - Multiple Servers
+``` /etc/httpd/conf/httpd.conf
+DocumentRoot /var/www/html
+StartServers 10
+```
+systemctl reload httpd
+ps aux                          # check how many httpd servers owned by user apache have been started
+
+# Apache - Disable Directory Listing with Containers (Indexes)
+``` /etc/httpd/conf/httpd.conf  # Apache config file
+<Directory /var/www/html/books> # append these to end of the file
+    Options -Indexes
+</Directory>
+```
+systemctl reload httpd
+
+# Apache - Whitelist Client with Access Control
+``` /etc/httpd/conf/httpd.conf  # Apache config file
+<Directory /var/www/html/books> # append these to end of the file
+    Options -Indexes
+    Require all denied
+    Require ip [client ip]
+</Directory>
+```
+systemctl reload httpd
+
+# Apache - SSL
+yum install mod_ssl
+# Note: check "/etc/httpd/conf.d/ssl.conf" to see whether SSLCertificateFile and SSLCertificateKeyFile point to "/etc/pki/tls/certs/localhost.crt" and "/etc/pki/tls/private/localhost.key" respectively
+
+# Apache - Name Based Virtual Host
+``` /etc/hosts
+[server ip] www.flowers.com
+[server ip] www.fruits.com
+```
+ping www.flowers.com
+mkdir /var/www/flowers          # create as root
+vim /var/www/flowers/index.html
+mkdir /var/www/fruits
+vim /var/www/fruits/index.html
+``` /etc/httpd/conf.d/flowers.conf
+<VirtualHost [server ip]:80>
+    ServerName www.flowers.com
+    DocumentRoot /var/www/flowers
+    ErrorLog /var/log/httpd/flowers-error_log
+    CustomLog /var/log/httpd/flowers-access_log combined
+</VirtualHost>
+```
+``` /etc/httpd/conf.d/fruits.conf
+<VirtualHost [server ip]:80>
+    ServerName www.fruits.com
+    DocumentRoot /var/www/fruits
+    ErrorLog /var/log/httpd/fruits-error_log
+    CustomLog /var/log/httpd/fruits-access_log combined
+</VirtualHost>
+```
+systemctl restart httpd
+# Note: Visit http://www.flowers.com and http://www.fruits.com
+# Note: Virtual hosts can be created with /etc/httpd/conf/httpd.conf too, and should be done there during test
+
+# Apache - Group Folder Permissions
+chgrp [group] [folder]
+chmod 2775 [folder]             # 2xxx - SETGID, 4xxx - SETUID
+
+# Apache - Log Files
+tail /var/log/httpd/access_log
+tail /var/log/httpd/error_log
+
+# Apache - Manual
+yum install httpd-manual
+systemctl restart httpd
+# Note: Visit http://localhost/manual
+
+# Apache - CGI Scripts
+mkdir /var/www/fruits-cgi-bin   # folder to store cgi scripts
+chcon -t httpd_sys_script_exec_t /var/www/fruits-cgi-bin
+``` /var/www/fruits-cgi-bin/test.pl
+#!/usr/bin/perl
+print "Content-type: text/html\n\n";
+print "Hello World";
+```
+chmod 755 /var/www/fruits-cgi-bin/test.pl
+``` /etc/httpd/conf.d/fruits.conf
+<VirtualHost your_server_ip:80>
+    ServerName www.fruits.com
+    DocumentRoot /var/www/fruits
+    ErrorLog /var/log/httpd/fruits-error_log
+    CustomLog /var/log/httpd/fruits-access_log combined
+    ScriptAlias /cgi-bin/ /var/www/fruits-cgi-bin/
+</VirtualHost>
+```
+systemctl restart httpd
+# Note: Visit http://www.fruits.com/cgi-bin/test.pl
+
+# Apache - User Authentication
+htpassword -cm /etc/httpd/conf/flowers-users bob        # "c" to create initial file
+htpassword -m /etc/httpd/conf/flowers-users alice
+``` /var/www/flowers/.htaccess
+AuthType basic
+AuthName "Flowers Website"
+AuthUserFile /etc/httpd/conf/flowers-users
+require user bob [alice] [more users]   # allow only bob to login
+```
+``` /etc/httpd/conf/httpd.conf
+<Directory /var/www/flowers>
+    AllowOverride AuthConfig
+</Directory>
+```
+systemctl restart apache
+tail /var/log/httpd/fruits-access_log   # see what info is captured
+tail /var/log/httpd/fruits-error_log    # see what info is captured
+
+##### Elinks Text-Based Web Browser #####
+
+# Elinks Setup Steps
+yum install elinks
+elinks
+
+##### Squid ##### TODO
+
+# Squid Setup Steps
+yum install squid
+``` /etc/squid/squid.conf
+
+```
+
+##### Tomcat #####
+
+# Tomcat Setup Steps
+yum install tomcat
+tomcat version
+cd /var/lib/tomcat/webapps
+mkdir ROOT
+``` /var/lib/tomcat/webapps/ROOT/index.jsp
+This is my Tomcat<br>
+<% new java.util.Date() %>
+```
+cat /etc/tomcat/server.xml              # find "<Connector port="8080" protocol..." to see/change what port tomcat listens to
+systemctl start tomcat
+# Note: Visit http://localhost:8080
+telnet 127.0.0.1 8005
+SHUTDOWN                                # sends a shutdown signal to tomcat
+
+# Tomcat - WAR Files
+mv sample.war /var/lib/tomcat/webapps/.
+chmod 644 sample.war
+chcon -t tomcat_var_lib_t sample.war
+systemctl restart tomcat
+
+##### Nginx #####
+
+# Nginx Setup Steps
+yum install gcc
+yum install pcre pcre-devel
+yum install zlib zlib-devel
+# Note: Download nginx.tar.gz from www.nginx.org or elsewhere
+cp nginx-1.7.7.tar.gz /usr/src/.
+cd /usr/src
+tar xvf nginx-1.7.7.tar.gz
+cd nginx-1.7.7
+./configure
+make
+make install
+``` /usr/local/nginx/conf/nginx.conf
+http {
+    server {
+        listen 80;                      # port that nginx listens on
+        location / {                    # web pages are located in /usr/local/nginx/html
+            root html;
+            index index.html index.htm;
+            ...
+```
+/usr/local/nginx/sbin/nginx             # starts nginx
+netstat -tunap | grep nginx             # check whether nginx is running on port 80
+# Note: Visit http://localhost
+# Note: Adjust firewall to allow http or port 80
+/usr/local/nginx/sbin/nginx -V          # display nginx version and configure arguments
+
+# Nginx - Master and Worker Processes
+ps aux | grep nginx                                     # view master and worker processes of nginx
+useradd -s /sbin/nologin -d /usr/local/nginx nginx      # create a new user account, ignore the warning msg about home directory already existing
+``` /usr/local/nginx/conf/nginx.conf
+user nginx nginx;
+worker_processes 2;
+```
+/usr/local/nginx/sbin/nginx -s stop     # stops nginx
+/usr/local/nginx/sbin/nginx             # starts nginx
+ps aux | grep nginx                     # view master and worker processes of nginx
+
+# Nginx - Configure as a Service
+``` /usr/lib/systemd/system/nginx.service
+[Unit]
+Description=The NGINX HTTP server
+After=syslog.target network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=forking
+PIDFile=/usr/local/nginx/logs/nginx.pid
+ExecStartPre=/usr/local/nginx/sbin/nginx -t
+ExecStart=/usr/local/nginx/sbin/nginx
+ExecReload=/bin/kill -s HUP $MAINPID
+ExecStop=/bin/kill -s QUIT $MAINPID
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+/usr/local/nginx/sbin/nginx -s stop
+systemctl status nginx
+systemctl start nginx
+systemctl stop nginx
+
+##### Load Tests ##### TODO
+
+# Apache JMeter
+
+##########################
+# Lesson 3: File Systems #
+##########################
+
+##### Local #####
+
+# Creating a New Partition
+fdisk -l                                # display all disks
+fdisk /dev/sda                          # modify sda
+m                                       # display available options
+p                                       # list existing partitions
+n, p, 3, [enter], +100M                 # new primary partition /dev/sda3 with default starting sector and size of 100MB
+p                                       # list existing partitions
+w                                       # write/commit changes to disk
+sudo init 6
+fdisk -l                                # /dev/sda3 should be there
+
+# Format New Partition with XFS Filesystem
+mkfs -t xfs /dev/sda3                   # format with xfs
+
+# Auto Mount Local Filesystem on Boot with Fstab
+mkdir /filesys1                         # create a mount point
+blkid /dev/sda3                         # get UUID of partition
+``` /etc/fstab
+UUID="[UUID of partition]" /filesys1 xfs defaults 0 0 # The partition will be mounted automatically on boot
+```
+mount /filesys1
+
+##### Remote #####
+
+# Export Directories on NFS Server
+systemctl status nfs-server
+systemctl start nfs-server
+mkdir -p /exports/data                  # directory that will be exported
+chmod 777 /exports/data
+vim /exports/data/filez
+``` /etc/exports
+/exports/data   [client ip/*](ro,sync)
+```
+exportfs -r
+exportfs -v
+# Note: Adjust firewall to allow connections to NFS on TCP port 2049, and allow connections to the loopback interface too.
+
+# Root Squash
+``` /etc/exports
+/exports/data   [client ip/*](rw,root_squash,sync)
+```  
+exportfs -r
+exportfs -v
+# Note: Prevent client's root having same level of status as server's root
+
+# Exported Directory Permissions
+mkdir /exports/data/studentsonly
+chown student.student /exports/data/studentsonly
+chmod 755 /exports/data/studentsonly
+# Note: Only user "student" on client machine will be able to write to studentsonly directory
+
+# Mount Exported Directories on NFS Client
+mkdir -p /mount/data                    # mount point
+mount [server ip]:/exports/data /mount/data -o rw
+mount                                   # displays all mounted devices
+umount /mount/data                      # unmount once done
+# Note: Writing to /mount/data will not work since server has setted it to read-only
+
+# Mount Pseudo-Root
+mount [server ip]:/ /mount              # mounts all exported directories from server
+ls /mount
+umount /mount
+
+# Auto Mount Remote Filesystem (Exported Directory) on Boot with Fstab
+``` /etc/fstab
+[server ip]:/exports/data /mount/data nfs defaults 0 0
+```
+mount /mount/data
+ls /mount/data
+
+############################
+# Lesson 4: Access Control #
+############################
+
+##### Firewall #####
+
+# Zones
+firewall-cmd --get-zones                        # list zones
+firewall-cmd --list-all-zones                   # list zones
+firewall-cmd --get-default-zone                 # display default zone
+firewall-cmd --set-default-zone=internal        # set default zone
+
+# Displaying Services Configurations
+firewall-cmd --list-services            # list services allowed through firewall
+cat /etc/firewalld/zones/public.xml     # list services configured permanently in a zone
+
+# Displaying Rules Configurations
+firewall-cmd --list-all
+firewall-cmd --direct --get-all-rules
+
+# Configure Service
+firewall-cmd --permanent --zone=public --add-service=telnet     # add service configured permanently
+firewall-cmd --reload
+firewall-cmd --permanent --zone=public --remove-service=telnet  # remove service configured permanently
+firewall-cmd --reload
+
+# Configure Port
+firewall-cmd --permanent --zone=public --add-port=8888/tcp      # add port configured permanently
+firewall-cmd --reload
+firewall-cmd --permanent --zone=public --remove-port=8888/tcp   # remove port configured permanently
+firewall-cmd --reload
+
+# Configure Normal Rule (For Outgoing Rules)
+firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 99 -j DROP  # block all outgoing traffice through the direct interface, priority last (99)
+firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 1 -m state --state ESTABLISHED,RELATED -j ACCEPT # allow outgoing traffic that belongs to established connections
+firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 2 -p tcp --dport 80 -j ACCEPT
+firewall-cmd --permanent --direct --add-rule ipv4 filter OUTPUT 3 -p udp --dport 53 -j ACCEPT
+firewall-cmd --reload
+firewall-cmd --permanent --direct --remove-rule ipv4 filter OUTPUT 1 -m state --state ESTABLISHED,RELATED -j ACCEPT
+firewall-cmd --permanent --direct --remove-rule ipv4 filter OUTPUT 2 -p tcp --dport 80 -j ACCEPT
+firewall-cmd --permanent --direct --remove-rule ipv4 filter OUTPUT 3 -p udp --dport 53 -j ACCEPT
+firewall-cmd --permanent --direct --remove-rule ipv4 filter OUTPUT 99 -j DROP
+firewall-cmd --reload
+
+# Configure Rich Rule
+firewall-cmd --permanent --zone=public --add-rich-rule='rule family=ipv4 service name=ftp source address=192.168.94.0/24 accept'
+firewall-cmd --reload
+firewall-cmd --permanent --zone=public --remove-rich-rule='rule family=ipv4 service name=ftp source address=192.168.94.0/24 accept'
+firewall-cmd --reload
+
+# Firewall Service
+systemctl status firewalld
+
+##### TCP Wrappers #####
+
+# List Libraries Used By Program
+ldd /usr/sbin/vsftpd
+# Note: If lbwrap.so, then access to vsftpd can be controlled through /etc/hosts.allow and /etc/hosts.deny
+
+# Check For Keywords Within Program Strings
+strings /usr/bin/vsftpd | grep hosts
+# Note: if hosts.allow, hosts.deny or hosts_access is in it, /etc/hosts.allow and /etc/hosts.deny can control access to vsftpd
+
+# Whitelist
+``` /etc/hosts.allow
+sshd: [client ip]
+```
+``` /etc/hosts.deny
+ALL: ALL
+```
+
+# Allow All Except
+``` /etc/hosts.allow
+vsftpd: ALL EXCEPT [client ip]
+```
